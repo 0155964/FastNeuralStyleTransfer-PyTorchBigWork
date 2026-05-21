@@ -111,7 +111,7 @@ if uploaded_img is not None:
                 st.success(f"🎉 转换完成！耗时: {end_time - start_time:.3f} 秒")
                 
                 # 提供下载按钮
-                buf = io.BytesBytesIO()
+                buf = io.BytesIO()
                 output_img.save(buf, format="PNG")
                 st.download_button(
                     label="💾 下载艺术画作",
