@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms, datasets, models
 from PIL import Image
 
+
 # ==========================================
 # 1. 定义转换网络 (Image Transform Network)
 # 用于将普通照片转换为艺术风格图
@@ -151,13 +152,14 @@ def train():
     os.makedirs("./style_images", exist_ok=True)
 
     # 超参数配置
-    epochs = 2
+    epochs = 1
     batch_size = 4
     content_weight = 1e5
     style_weight = 1e10
     lr = 1e-3
 
     # 数据集加载
+    print("【DEBUG】开始加载 train_dataset...")
     transform = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(256),
@@ -165,13 +167,17 @@ def train():
         transforms.Lambda(lambda x: x.mul(255))
     ])
     train_dataset = datasets.ImageFolder(dataset_dir, transform)
+    print(f"【DEBUG】train_dataset 加载完成，共有 {len(train_dataset)} 张图片！")
+    # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    print("【DEBUG】train_loader 构建完成！")
 
     transformer = TransformerNet().to(device)
     optimizer = optim.Adam(transformer.parameters(), lr=lr)
     mse_loss = torch.nn.MSELoss()
 
     vgg = Vgg16(requires_grad=False).to(device)
+
     
     # 处理风格图
     style_transform = transforms.Compose([
@@ -185,11 +191,16 @@ def train():
     features_style = vgg(normalize_batch(style))
     gram_style = [calc_gram_matrix(y) for y in features_style]
 
+
+    print("【DEBUG】即将进入 Epoch 循环...")
     print("开始训练...")
     for epoch in range(epochs):
         transformer.train()
+        print(f"【DEBUG】进入 Epoch {epoch+1}，准备从 train_loader 读取第一个 batch...")
         for batch_id, (x, _) in enumerate(train_loader):
+            # print(f"【DEBUG】成功读取到 batch_id: {batch_id}") # 看这一句能不能打出来！
             n_batch = len(x)
+            # print(f"【DEBUG】模型前向传播生成 y 成功")
             x = x.to(device)
             optimizer.zero_grad()
             
@@ -209,7 +220,7 @@ def train():
             style_loss = 0.
             for ft_y, gm_s in zip(features_y, gram_style):
                 gm_y = calc_gram_matrix(ft_y)
-                style_loss += mse_loss(gm_y, gm_s.expand_n_batch, -1, -1))
+                style_loss += mse_loss(gm_y, gm_s.expand(n_batch, -1, -1))
             style_loss *= style_weight
 
             # 5. 反向传播更新 生成器 (transformer)
@@ -217,7 +228,8 @@ def train():
             total_loss.backward()
             optimizer.step()
 
-            if (batch_id + 1) % 500 == 0:
+            # 每10次输出一条信息
+            if (batch_id + 1) % 10 == 0:
                 print(f"Epoch {epoch+1}/{epochs} [{batch_id+1}/{len(train_loader)}] \t "
                       f"Content Loss: {content_loss.item():.2f} \t Style Loss: {style_loss.item():.2f}")
 
@@ -227,4 +239,7 @@ def train():
     print(f"模型已保存至 {save_model_path}")
 
 if __name__ == "__main__":
+    # 如果 Windows 下还是卡死，在这里强制设置启动方式为 spawn（可选）
+    # import multiprocessing
+    # multiprocessing.set_start_method('spawn', force=True) 
     train()
