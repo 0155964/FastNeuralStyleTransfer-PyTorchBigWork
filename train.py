@@ -194,49 +194,68 @@ def train():
 
     print("【DEBUG】即将进入 Epoch 循环...")
     print("开始训练...")
+    print("【INFO】开始训练...")
+    best_loss = float('inf') # 用于记录历史上最低的总 Loss
+    
     for epoch in range(epochs):
         transformer.train()
-        print(f"【DEBUG】进入 Epoch {epoch+1}，准备从 train_loader 读取第一个 batch...")
         for batch_id, (x, _) in enumerate(train_loader):
-            # print(f"【DEBUG】成功读取到 batch_id: {batch_id}") # 看这一句能不能打出来！
             n_batch = len(x)
-            # print(f"【DEBUG】模型前向传播生成 y 成功")
             x = x.to(device)
             optimizer.zero_grad()
             
-            # 1. 通过转换网络生成图片
+            # 1. 前向传播
             y = transformer(x)
 
-            # 2. 将生成图和原图传入 VGG 计算特征
-            x = normalize_batch(x)
-            y = normalize_batch(y)
-            features_y = vgg(y)
-            features_x = vgg(x)
+            # 2. VGG 特征提取
+            x_norm = normalize_batch(x)
+            y_norm = normalize_batch(y)
+            features_y = vgg(y_norm)
+            features_x = vgg(x_norm)
 
-            # 3. 计算内容损失 (取 relu2_2)
+            # 3. 计算损失
             content_loss = content_weight * mse_loss(features_y[1], features_x[1])
-
-            # 4. 计算风格损失 (取四层特征的 Gram 矩阵差)
             style_loss = 0.
             for ft_y, gm_s in zip(features_y, gram_style):
                 gm_y = calc_gram_matrix(ft_y)
                 style_loss += mse_loss(gm_y, gm_s.expand(n_batch, -1, -1))
             style_loss *= style_weight
 
-            # 5. 反向传播更新 生成器 (transformer)
             total_loss = content_loss + style_loss
+            
+            # 4. 反向传播更新
             total_loss.backward()
             optimizer.step()
 
-            # 每10次输出一条信息
-            if (batch_id + 1) % 10 == 0:
+            # --- 以下是新增的打印与保存逻辑 ---
+            
+            # (A) 每 100 个 batch 打印一次日志，并更新 best_loss
+            if (batch_id + 1) % 100 == 0:
+                current_total = total_loss.item()
                 print(f"Epoch {epoch+1}/{epochs} [{batch_id+1}/{len(train_loader)}] \t "
-                      f"Content Loss: {content_loss.item():.2f} \t Style Loss: {style_loss.item():.2f}")
+                      f"Content: {content_loss.item():.2f} \t Style: {style_loss.item():.2f} \t Total: {current_total:.2f}")
+                
+                # 如果当前总 Loss 是历史最低，保存为最优模型
+                if current_total < best_loss:
+                    best_loss = current_total
+                    best_model_path = os.path.join("./models", "starry_night_best.pth")
+                    torch.save(transformer.state_dict(), best_model_path)
+                    print(f"  ⭐ 发现更低 Loss，已更新 {best_model_path}")
 
-    # 保存训练好的模型 (.pth)
+            # (B) 每 1000 个 batch 保存一个中间状态，方便你在网页端对比画风
+            if (batch_id + 1) % 1000 == 0:
+                step_model_path = os.path.join("./models", f"starry_night_step{batch_id+1}.pth")
+                torch.save(transformer.state_dict(), step_model_path)
+                print(f"  💾 已保存中间检查点: {step_model_path}")
+
+    # 训练结束后，保存最终的模型
     transformer.eval()
-    torch.save(transformer.state_dict(), save_model_path)
-    print(f"模型已保存至 {save_model_path}")
+    final_model_path = os.path.join("./models", "starry_night_final.pth")
+    torch.save(transformer.state_dict(), final_model_path)
+    print(f"🎉 训练全部结束！最终模型已保存至 {final_model_path}")
+
+
+
 
 if __name__ == "__main__":
     # 如果 Windows 下还是卡死，在这里强制设置启动方式为 spawn（可选）

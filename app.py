@@ -79,11 +79,21 @@ else:
     model_path_to_load = default_model_path
     st.sidebar.info("💡 目前使用的是系统默认风格模型。")
 
+
 # 2. 主界面：图片上传
 uploaded_img = st.file_uploader("📸 请上传一张待转换的内容图片...", type=["jpg", "png", "jpeg"])
 
 if uploaded_img is not None:
     content_img = Image.open(uploaded_img).convert("RGB")
+    
+    # 增加一个滑块，让用户自己调节风格强度
+    style_strength = st.slider(
+        "🎚️ 风格强度调节 (0.0: 完全保留原图 --> 1.0: 极致艺术风格)", 
+        min_value=0.0, 
+        max_value=1.0, 
+        value=1.0, 
+        step=0.05
+    )
     
     # 展示两列对比
     col1, col2 = st.columns(2)
@@ -95,29 +105,37 @@ if uploaded_img is not None:
     with col2:
         st.subheader("✨ AIGC 风格化结果")
         
-        # 添加一个按钮触发推理
-        if st.button("🚀 一键风格化", use_container_width=True):
+        if st.button("🚀 一键生成", use_container_width=True):
             try:
-                with st.spinner("神经网络疯狂计算中... (预计 < 1秒)"):
+                with st.spinner("神经网络疯狂计算中..."):
                     start_time = time.time()
                     
-                    # 加载模型并推理
+                    # 1. 神经网络生成 100% 浓度的纯风格图
                     model, device = load_model(model_path_to_load)
-                    output_img = stylize(model, device, content_img)
+                    pure_stylized_img = stylize(model, device, content_img)
+                    
+                    # --- [新增代码] 确保两张图片尺寸一致 ---
+                    # 强制将生成图 Resize 成与原始用户上传的 content_img 一模一样的大小
+                    if pure_stylized_img.size != content_img.size:
+                        pure_stylized_img = pure_stylized_img.resize(content_img.size, Image.Resampling.LANCZOS)
+                    # ------------------------------------
+
+                    # 2. 根据滑块的比例，将原图与风格图进行像素级融合
+                    final_img = Image.blend(content_img, pure_stylized_img, style_strength)
                     
                     end_time = time.time()
                     
-                st.image(output_img, use_container_width=True)
+                st.image(final_img, use_container_width=True)
                 st.success(f"🎉 转换完成！耗时: {end_time - start_time:.3f} 秒")
                 
                 # 提供下载按钮
                 buf = io.BytesIO()
-                output_img.save(buf, format="PNG")
+                final_img.save(buf, format="PNG")
                 st.download_button(
-                    label="💾 下载艺术画作",
+                    label="💾 下载最终画作",
                     data=buf.getvalue(),
                     file_name="stylized_art.png",
                     mime="image/png"
                 )
             except Exception as e:
-                st.error(f"推理发生错误，请确保上传的模型与架构匹配！详细报错：{e}")
+                st.error(f"推理发生错误，详细报错：{e}")
